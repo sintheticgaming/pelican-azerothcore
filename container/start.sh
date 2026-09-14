@@ -3,5 +3,14 @@
 
 set -euo pipefail
 
-echo "pelican-azerothcore runtime initialized."
-echo "Runtime orchestration is not enabled in this development build."
+export AC_UPDATES_ENABLE_DATABASES=0
+export AC_DISABLE_INTERACTIVE=1
+export AC_CLOSE_IDLE_CONNECTIONS=0
+
+echo "Starting AzerothCore authserver..."
+ACORE_COMPONENT=authserver authserver </dev/null &
+
+echo "Starting AzerothCore worldserver..."
+export ACORE_COMPONENT=worldserver
+
+exec worldserver
