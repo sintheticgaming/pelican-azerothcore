@@ -1,0 +1,96 @@
+name: Release Container
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 0.1.0"
+        required: true
+        type: string
+
+      digest:
+        description: "Tested dev image digest, for example sha256:abc123..."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate version and digest
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must use semantic versioning, for example 0.1.0"
+            exit 1
+          fi
+
+          if [[ ! "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "Digest must look like sha256:<64 hex characters>"
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify source image
+        shell: bash
+        env:
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          IMAGE="ghcr.io/sintheticgaming/pelican-azerothcore"
+
+          docker buildx imagetools inspect \
+            "${IMAGE}@${DIGEST}"
+
+      - name: Publish versioned release
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          IMAGE="ghcr.io/sintheticgaming/pelican-azerothcore"
+
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${VERSION}" \
+            "${IMAGE}@${DIGEST}"
+
+      - name: Update stable channel
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          IMAGE="ghcr.io/sintheticgaming/pelican-azerothcore"
+
+          docker buildx imagetools create \
+            --tag "${IMAGE}:stable" \
+            "${IMAGE}:${VERSION}"
+
+      - name: Verify release
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          IMAGE="ghcr.io/sintheticgaming/pelican-azerothcore"
+
+          echo "Versioned release:"
+          docker buildx imagetools inspect "${IMAGE}:${VERSION}"
+
+          echo
+          echo "Stable release:"
+          docker buildx imagetools inspect "${IMAGE}:stable"
