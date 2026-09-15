@@ -1,0 +1,208 @@
+name: Check AzerothCore Upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 9 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: check-azerothcore-upstream
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check upstream image digests
+        id: update
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          LOCK_FILE="versions/azerothcore.lock.json"
+
+          resolve_amd64_digest() {
+            local ref="$1"
+
+            docker buildx imagetools inspect "$ref" \
+              --format '{{json .Manifest}}' \
+              | jq -r '
+                  if .manifests then
+                    [
+                      .manifests[]
+                      | select(
+                          .platform.os == "linux"
+                          and .platform.architecture == "amd64"
+                        )
+                      | .digest
+                    ][0] // empty
+                  else
+                    .digest // empty
+                  end
+                '
+          }
+
+          AUTH_IMAGE="$(jq -r '.authserver.image' "$LOCK_FILE")"
+          DBIMPORT_IMAGE="$(jq -r '.db_import.image' "$LOCK_FILE")"
+          WORLD_IMAGE="$(jq -r '.worldserver.image' "$LOCK_FILE")"
+
+          AUTH_OLD="$(jq -r '.authserver.digest' "$LOCK_FILE")"
+          DBIMPORT_OLD="$(jq -r '.db_import.digest' "$LOCK_FILE")"
+          WORLD_OLD="$(jq -r '.worldserver.digest' "$LOCK_FILE")"
+
+          AUTH_NEW="$(resolve_amd64_digest "${AUTH_IMAGE}:master")"
+          DBIMPORT_NEW="$(resolve_amd64_digest "${DBIMPORT_IMAGE}:master")"
+          WORLD_NEW="$(resolve_amd64_digest "${WORLD_IMAGE}:master")"
+
+          if [[ -z "$AUTH_NEW" || -z "$DBIMPORT_NEW" || -z "$WORLD_NEW" ]]; then
+            echo "Failed to resolve one or more upstream digests."
+            exit 1
+          fi
+
+          echo "Current lock:"
+          echo "  authserver:  $AUTH_OLD"
+          echo "  db-import:   $DBIMPORT_OLD"
+          echo "  worldserver: $WORLD_OLD"
+
+          echo
+          echo "Upstream master:"
+          echo "  authserver:  $AUTH_NEW"
+          echo "  db-import:   $DBIMPORT_NEW"
+          echo "  worldserver: $WORLD_NEW"
+
+          if [[ \
+            "$AUTH_OLD" == "$AUTH_NEW" &&
+            "$DBIMPORT_OLD" == "$DBIMPORT_NEW" &&
+            "$WORLD_OLD" == "$WORLD_NEW"
+          ]]; then
+            echo "No AzerothCore update detected."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TMP_FILE="$(mktemp)"
+
+          jq \
+            --arg auth "$AUTH_NEW" \
+            --arg dbimport "$DBIMPORT_NEW" \
+            --arg world "$WORLD_NEW" \
+            '
+              .authserver.digest = $auth
+              | .db_import.digest = $dbimport
+              | .worldserver.digest = $world
+            ' \
+            "$LOCK_FILE" > "$TMP_FILE"
+
+          mv "$TMP_FILE" "$LOCK_FILE"
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+          echo "auth_old=$AUTH_OLD" >> "$GITHUB_OUTPUT"
+          echo "auth_new=$AUTH_NEW" >> "$GITHUB_OUTPUT"
+
+          echo "dbimport_old=$DBIMPORT_OLD" >> "$GITHUB_OUTPUT"
+          echo "dbimport_new=$DBIMPORT_NEW" >> "$GITHUB_OUTPUT"
+
+          echo "world_old=$WORLD_OLD" >> "$GITHUB_OUTPUT"
+          echo "world_new=$WORLD_NEW" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update pull request
+        if: steps.update.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTH_OLD: ${{ steps.update.outputs.auth_old }}
+          AUTH_NEW: ${{ steps.update.outputs.auth_new }}
+          DBIMPORT_OLD: ${{ steps.update.outputs.dbimport_old }}
+          DBIMPORT_NEW: ${{ steps.update.outputs.dbimport_new }}
+          WORLD_OLD: ${{ steps.update.outputs.world_old }}
+          WORLD_NEW: ${{ steps.update.outputs.world_new }}
+        run: |
+          set -euo pipefail
+
+          BRANCH="automation/update-azerothcore"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$BRANCH"
+
+          git add versions/azerothcore.lock.json
+          git commit -m "Update AzerothCore upstream images"
+
+          git push --force origin "HEAD:$BRANCH"
+
+          cat > /tmp/pr-body.md <<EOF
+          ## AzerothCore upstream update detected
+
+          This pull request updates the pinned AzerothCore container images used by the development build.
+
+          ### Digest changes
+
+          **authserver**
+
+          \`\`\`text
+          $AUTH_OLD
+          ->
+          $AUTH_NEW
+          \`\`\`
+
+          **db-import**
+
+          \`\`\`text
+          $DBIMPORT_OLD
+          ->
+          $DBIMPORT_NEW
+          \`\`\`
+
+          **worldserver**
+
+          \`\`\`text
+          $WORLD_OLD
+          ->
+          $WORLD_NEW
+          \`\`\`
+
+          ### Release process
+
+          After this PR is merged:
+
+          1. A new \`:dev\` image will be built from these exact pinned digests.
+          2. Test the new image in Pelican.
+          3. Verify database migrations, authserver, worldserver, login, and character persistence.
+          4. Promote the tested image to a new versioned release only after validation.
+
+          This PR does **not** update the production \`:stable\` image.
+          EOF
+
+          PR_NUMBER="$(
+            gh pr list \
+              --head "$BRANCH" \
+              --base main \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty'
+          )"
+
+          if [[ -n "$PR_NUMBER" ]]; then
+            gh pr edit "$PR_NUMBER" \
+              --title "Update AzerothCore upstream images" \
+              --body-file /tmp/pr-body.md
+          else
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "Update AzerothCore upstream images" \
+              --body-file /tmp/pr-body.md
+          fi
