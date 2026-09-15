@@ -15,11 +15,14 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -31,6 +34,15 @@ jobs:
           set -euo pipefail
 
           LOCK_FILE="versions/azerothcore.lock.json"
+
+          # Require all three upstream images to have been created within
+          # five minutes of one another. This reduces the chance of accepting
+          # a partially-published AzerothCore build.
+          MAX_BUILD_SPREAD_SECONDS=300
+
+          # Resolve all three upstream tags twice, five minutes apart.
+          # If any tag changes during the window, do not propose an update.
+          STABILITY_WAIT_SECONDS=300
 
           resolve_amd64_digest() {
             local ref="$1"
@@ -53,6 +65,27 @@ jobs:
                 '
           }
 
+          resolve_created() {
+            local image="$1"
+            local digest="$2"
+
+            docker buildx imagetools inspect "${image}@${digest}" \
+              --format '{{json .Image}}' \
+              | jq -r '.created // empty'
+          }
+
+          jq -e '
+            .channel and
+            .authserver.image and
+            .authserver.digest and
+            .db_import.image and
+            .db_import.digest and
+            .worldserver.image and
+            .worldserver.digest
+          ' "$LOCK_FILE" > /dev/null
+
+          CHANNEL="$(jq -r '.channel' "$LOCK_FILE")"
+
           AUTH_IMAGE="$(jq -r '.authserver.image' "$LOCK_FILE")"
           DBIMPORT_IMAGE="$(jq -r '.db_import.image' "$LOCK_FILE")"
           WORLD_IMAGE="$(jq -r '.worldserver.image' "$LOCK_FILE")"
@@ -61,42 +94,152 @@ jobs:
           DBIMPORT_OLD="$(jq -r '.db_import.digest' "$LOCK_FILE")"
           WORLD_OLD="$(jq -r '.worldserver.digest' "$LOCK_FILE")"
 
-          AUTH_NEW="$(resolve_amd64_digest "${AUTH_IMAGE}:master")"
-          DBIMPORT_NEW="$(resolve_amd64_digest "${DBIMPORT_IMAGE}:master")"
-          WORLD_NEW="$(resolve_amd64_digest "${WORLD_IMAGE}:master")"
+          if [[ -z "$CHANNEL" || "$CHANNEL" == "null" ]]; then
+            echo "Lock file does not contain a valid channel."
+            exit 1
+          fi
 
-          if [[ -z "$AUTH_NEW" || -z "$DBIMPORT_NEW" || -z "$WORLD_NEW" ]]; then
+          echo "AzerothCore channel: $CHANNEL"
+          echo
+          echo "Resolving first upstream snapshot..."
+
+          AUTH_NEW_1="$(resolve_amd64_digest "${AUTH_IMAGE}:${CHANNEL}")"
+          DBIMPORT_NEW_1="$(resolve_amd64_digest "${DBIMPORT_IMAGE}:${CHANNEL}")"
+          WORLD_NEW_1="$(resolve_amd64_digest "${WORLD_IMAGE}:${CHANNEL}")"
+
+          if [[ \
+            -z "$AUTH_NEW_1" ||
+            -z "$DBIMPORT_NEW_1" ||
+            -z "$WORLD_NEW_1"
+          ]]; then
             echo "Failed to resolve one or more upstream digests."
             exit 1
           fi
 
+          AUTH_CREATED="$(resolve_created "$AUTH_IMAGE" "$AUTH_NEW_1")"
+          DBIMPORT_CREATED="$(resolve_created "$DBIMPORT_IMAGE" "$DBIMPORT_NEW_1")"
+          WORLD_CREATED="$(resolve_created "$WORLD_IMAGE" "$WORLD_NEW_1")"
+
+          if [[ \
+            -z "$AUTH_CREATED" ||
+            -z "$DBIMPORT_CREATED" ||
+            -z "$WORLD_CREATED"
+          ]]; then
+            echo "Failed to resolve one or more image creation timestamps."
+            exit 1
+          fi
+
+          AUTH_EPOCH="$(date -d "$AUTH_CREATED" +%s)"
+          DBIMPORT_EPOCH="$(date -d "$DBIMPORT_CREATED" +%s)"
+          WORLD_EPOCH="$(date -d "$WORLD_CREATED" +%s)"
+
+          MIN_EPOCH="$(
+            printf '%s\n' \
+              "$AUTH_EPOCH" \
+              "$DBIMPORT_EPOCH" \
+              "$WORLD_EPOCH" \
+              | sort -n \
+              | head -n1
+          )"
+
+          MAX_EPOCH="$(
+            printf '%s\n' \
+              "$AUTH_EPOCH" \
+              "$DBIMPORT_EPOCH" \
+              "$WORLD_EPOCH" \
+              | sort -n \
+              | tail -n1
+          )"
+
+          BUILD_SPREAD="$((MAX_EPOCH - MIN_EPOCH))"
+
+          echo
           echo "Current lock:"
           echo "  authserver:  $AUTH_OLD"
           echo "  db-import:   $DBIMPORT_OLD"
           echo "  worldserver: $WORLD_OLD"
 
           echo
-          echo "Upstream master:"
-          echo "  authserver:  $AUTH_NEW"
-          echo "  db-import:   $DBIMPORT_NEW"
-          echo "  worldserver: $WORLD_NEW"
+          echo "First upstream snapshot:"
+          echo "  authserver:  $AUTH_NEW_1"
+          echo "    created:   $AUTH_CREATED"
+          echo "  db-import:   $DBIMPORT_NEW_1"
+          echo "    created:   $DBIMPORT_CREATED"
+          echo "  worldserver: $WORLD_NEW_1"
+          echo "    created:   $WORLD_CREATED"
+
+          echo
+          echo "Creation-time spread: ${BUILD_SPREAD}s"
+          echo "Maximum allowed spread: ${MAX_BUILD_SPREAD_SECONDS}s"
+
+          if (( BUILD_SPREAD > MAX_BUILD_SPREAD_SECONDS )); then
+            echo
+            echo "Upstream images do not appear to belong to one coherent publication."
+            echo "No lock-file update will be proposed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           if [[ \
-            "$AUTH_OLD" == "$AUTH_NEW" &&
-            "$DBIMPORT_OLD" == "$DBIMPORT_NEW" &&
-            "$WORLD_OLD" == "$WORLD_NEW"
+            "$AUTH_OLD" == "$AUTH_NEW_1" &&
+            "$DBIMPORT_OLD" == "$DBIMPORT_NEW_1" &&
+            "$WORLD_OLD" == "$WORLD_NEW_1"
           ]]; then
+            echo
             echo "No AzerothCore update detected."
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          echo
+          echo "Potential update detected."
+          echo "Waiting ${STABILITY_WAIT_SECONDS}s to verify upstream tags are stable..."
+
+          sleep "$STABILITY_WAIT_SECONDS"
+
+          echo
+          echo "Resolving second upstream snapshot..."
+
+          AUTH_NEW_2="$(resolve_amd64_digest "${AUTH_IMAGE}:${CHANNEL}")"
+          DBIMPORT_NEW_2="$(resolve_amd64_digest "${DBIMPORT_IMAGE}:${CHANNEL}")"
+          WORLD_NEW_2="$(resolve_amd64_digest "${WORLD_IMAGE}:${CHANNEL}")"
+
+          if [[ \
+            -z "$AUTH_NEW_2" ||
+            -z "$DBIMPORT_NEW_2" ||
+            -z "$WORLD_NEW_2"
+          ]]; then
+            echo "Failed to resolve the second upstream snapshot."
+            exit 1
+          fi
+
+          echo
+          echo "Second upstream snapshot:"
+          echo "  authserver:  $AUTH_NEW_2"
+          echo "  db-import:   $DBIMPORT_NEW_2"
+          echo "  worldserver: $WORLD_NEW_2"
+
+          if [[ \
+            "$AUTH_NEW_1" != "$AUTH_NEW_2" ||
+            "$DBIMPORT_NEW_1" != "$DBIMPORT_NEW_2" ||
+            "$WORLD_NEW_1" != "$WORLD_NEW_2"
+          ]]; then
+            echo
+            echo "Upstream tags changed during the stability window."
+            echo "No lock-file update will be proposed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo
+          echo "Upstream triplet remained stable."
+
           TMP_FILE="$(mktemp)"
 
           jq \
-            --arg auth "$AUTH_NEW" \
-            --arg dbimport "$DBIMPORT_NEW" \
-            --arg world "$WORLD_NEW" \
+            --arg auth "$AUTH_NEW_2" \
+            --arg dbimport "$DBIMPORT_NEW_2" \
+            --arg world "$WORLD_NEW_2" \
             '
               .authserver.digest = $auth
               | .db_import.digest = $dbimport
@@ -109,25 +252,37 @@ jobs:
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
           echo "auth_old=$AUTH_OLD" >> "$GITHUB_OUTPUT"
-          echo "auth_new=$AUTH_NEW" >> "$GITHUB_OUTPUT"
+          echo "auth_new=$AUTH_NEW_2" >> "$GITHUB_OUTPUT"
 
           echo "dbimport_old=$DBIMPORT_OLD" >> "$GITHUB_OUTPUT"
-          echo "dbimport_new=$DBIMPORT_NEW" >> "$GITHUB_OUTPUT"
+          echo "dbimport_new=$DBIMPORT_NEW_2" >> "$GITHUB_OUTPUT"
 
           echo "world_old=$WORLD_OLD" >> "$GITHUB_OUTPUT"
-          echo "world_new=$WORLD_NEW" >> "$GITHUB_OUTPUT"
+          echo "world_new=$WORLD_NEW_2" >> "$GITHUB_OUTPUT"
+
+          echo "auth_created=$AUTH_CREATED" >> "$GITHUB_OUTPUT"
+          echo "dbimport_created=$DBIMPORT_CREATED" >> "$GITHUB_OUTPUT"
+          echo "world_created=$WORLD_CREATED" >> "$GITHUB_OUTPUT"
 
       - name: Create or update pull request
         if: steps.update.outputs.changed == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
           AUTH_OLD: ${{ steps.update.outputs.auth_old }}
           AUTH_NEW: ${{ steps.update.outputs.auth_new }}
+
           DBIMPORT_OLD: ${{ steps.update.outputs.dbimport_old }}
           DBIMPORT_NEW: ${{ steps.update.outputs.dbimport_new }}
+
           WORLD_OLD: ${{ steps.update.outputs.world_old }}
           WORLD_NEW: ${{ steps.update.outputs.world_new }}
+
+          AUTH_CREATED: ${{ steps.update.outputs.auth_created }}
+          DBIMPORT_CREATED: ${{ steps.update.outputs.dbimport_created }}
+          WORLD_CREATED: ${{ steps.update.outputs.world_created }}
+
         run: |
           set -euo pipefail
 
@@ -148,6 +303,8 @@ jobs:
 
           This pull request updates the pinned AzerothCore container images used by the development build.
 
+          The upstream image triplet remained unchanged across the five-minute stability check, and the image creation timestamps passed the coherence check.
+
           ### Digest changes
 
           **authserver**
@@ -158,6 +315,12 @@ jobs:
           $AUTH_NEW
           \`\`\`
 
+          Created:
+
+          \`\`\`text
+          $AUTH_CREATED
+          \`\`\`
+
           **db-import**
 
           \`\`\`text
@@ -166,12 +329,24 @@ jobs:
           $DBIMPORT_NEW
           \`\`\`
 
+          Created:
+
+          \`\`\`text
+          $DBIMPORT_CREATED
+          \`\`\`
+
           **worldserver**
 
           \`\`\`text
           $WORLD_OLD
           ->
           $WORLD_NEW
+          \`\`\`
+
+          Created:
+
+          \`\`\`text
+          $WORLD_CREATED
           \`\`\`
 
           ### Release process
