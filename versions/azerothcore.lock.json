@@ -1,0 +1,15 @@
+{
+  "channel": "master",
+  "authserver": {
+    "image": "acore/ac-wotlk-authserver",
+    "digest": "sha256:455e0d38472579d92a32b4b05504735d4f6a2590f0461fbc2443ee8be519e26e"
+  },
+  "db_import": {
+    "image": "acore/ac-wotlk-db-import",
+    "digest": "sha256:b2352f3b78250f3898e6dae5f26aecfc898a23ba11e6b441c86f9dcab8860bfc"
+  },
+  "worldserver": {
+    "image": "acore/ac-wotlk-worldserver",
+    "digest": "sha256:2f7b1dc40395382aed471cb656880b8da46fadc9d2f139a8339d61662cbbffb7"
+  }
+}

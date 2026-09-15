@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "container/**"
+      - "versions/azerothcore.lock.json"
       - ".github/workflows/container.yml"
 
 permissions:
@@ -20,6 +21,41 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Load locked AzerothCore images
+        id: acore
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          LOCK_FILE="versions/azerothcore.lock.json"
+
+          jq -e '
+            .authserver.image and
+            .authserver.digest and
+            .db_import.image and
+            .db_import.digest and
+            .worldserver.image and
+            .worldserver.digest
+          ' "$LOCK_FILE" > /dev/null
+
+          AUTH_IMAGE="$(jq -r '.authserver.image' "$LOCK_FILE")"
+          AUTH_DIGEST="$(jq -r '.authserver.digest' "$LOCK_FILE")"
+
+          DBIMPORT_IMAGE="$(jq -r '.db_import.image' "$LOCK_FILE")"
+          DBIMPORT_DIGEST="$(jq -r '.db_import.digest' "$LOCK_FILE")"
+
+          WORLD_IMAGE="$(jq -r '.worldserver.image' "$LOCK_FILE")"
+          WORLD_DIGEST="$(jq -r '.worldserver.digest' "$LOCK_FILE")"
+
+          echo "authserver=${AUTH_IMAGE}@${AUTH_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "dbimport=${DBIMPORT_IMAGE}@${DBIMPORT_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "worldserver=${WORLD_IMAGE}@${WORLD_DIGEST}" >> "$GITHUB_OUTPUT"
+
+          echo "Locked AzerothCore images:"
+          echo "  authserver:  ${AUTH_IMAGE}@${AUTH_DIGEST}"
+          echo "  db-import:   ${DBIMPORT_IMAGE}@${DBIMPORT_DIGEST}"
+          echo "  worldserver: ${WORLD_IMAGE}@${WORLD_DIGEST}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -38,7 +74,9 @@ jobs:
           file: container/Dockerfile
           push: true
           build-args: |
-            ACORE_TAG=master
+            ACORE_AUTHSERVER_IMAGE=${{ steps.acore.outputs.authserver }}
+            ACORE_DBIMPORT_IMAGE=${{ steps.acore.outputs.dbimport }}
+            ACORE_WORLDSERVER_IMAGE=${{ steps.acore.outputs.worldserver }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/pelican-azerothcore:dev
           cache-from: type=gha

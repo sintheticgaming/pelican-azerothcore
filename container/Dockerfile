@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-ARG ACORE_TAG=master
+ARG ACORE_AUTHSERVER_IMAGE=acore/ac-wotlk-authserver:master
+ARG ACORE_DBIMPORT_IMAGE=acore/ac-wotlk-db-import:master
+ARG ACORE_WORLDSERVER_IMAGE=acore/ac-wotlk-worldserver:master
 
-FROM acore/ac-wotlk-authserver:${ACORE_TAG} AS upstream-auth
-FROM acore/ac-wotlk-db-import:${ACORE_TAG} AS upstream-dbimport
+FROM ${ACORE_AUTHSERVER_IMAGE} AS upstream-auth
+FROM ${ACORE_DBIMPORT_IMAGE} AS upstream-dbimport
 
-FROM acore/ac-wotlk-worldserver:${ACORE_TAG}
+FROM ${ACORE_WORLDSERVER_IMAGE}
 
 LABEL org.opencontainers.image.title="pelican-azerothcore"
 LABEL org.opencontainers.image.description="Pelican-compatible runtime for AzerothCore"
