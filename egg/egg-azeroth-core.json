@@ -16,8 +16,9 @@
     ],
     "features": [],
     "docker_images": {
-    "AzerothCore 0.1.0 (Stable)": "ghcr.io/sintheticgaming/pelican-azerothcore:0.1.0",
-    "AzerothCore Development": "ghcr.io/sintheticgaming/pelican-azerothcore:dev"
+        "AzerothCore 0.1.1 (Stable)": "ghcr.io/sintheticgaming/pelican-azerothcore:0.1.1",
+        "AzerothCore 0.1.0": "ghcr.io/sintheticgaming/pelican-azerothcore:0.1.0",
+        "AzerothCore Development": "ghcr.io/sintheticgaming/pelican-azerothcore:dev"
     },
     "file_denylist": [],
     "startup_commands": {
