@@ -31,7 +31,7 @@ build has been tested successfully with MySQL 8.0.
 
 ## Features
 
-- Pelican egg for Azeroth
+- Pelican egg for AzerothCore
 - Precompiled AzerothCore runtime
 - `authserver` and `worldserver` management
 - External MySQL 8.0 database support
