@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 set -euo pipefail
+CONF_DIR="${CONF_DIR:-/home/container/etc}"
 
 : "${DB_HOST:?DB_HOST is required}"
 : "${DB_PORT:?DB_PORT is required}"
@@ -22,7 +23,7 @@ export AC_ALE_BYTECODE_CACHE=1
 echo "Checking AzerothCore databases..."
 ACORE_COMPONENT=dbimport \
 AC_UPDATES_ENABLE_DATABASES=7 \
-dbimport
+dbimport -c "${CONF_DIR}/dbimport.conf"
 
 echo "Database initialization/update completed."
 
@@ -31,9 +32,10 @@ echo "Database initialization/update completed."
 export AC_UPDATES_ENABLE_DATABASES=0
 
 echo "Starting AzerothCore authserver..."
-ACORE_COMPONENT=authserver authserver </dev/null &
+ACORE_COMPONENT=authserver \
+authserver -c "${CONF_DIR}/authserver.conf" </dev/null &
 
 echo "Starting AzerothCore worldserver..."
 export ACORE_COMPONENT=worldserver
 
-exec worldserver
+exec worldserver -c "${CONF_DIR}/worldserver.conf"

@@ -3,16 +3,19 @@
 
 set -euo pipefail
 
-CONF_DIR="${CONF_DIR:-/azerothcore/env/dist/etc}"
+SERVER_DIR="${SERVER_DIR:-/home/container}"
+CONF_DIR="${CONF_DIR:-${SERVER_DIR}/etc}"
+DATA_DIR="${DATA_DIR:-${SERVER_DIR}/data}"
+LOGS_DIR="${LOGS_DIR:-${SERVER_DIR}/logs}"
 REF_CONF_DIR="/azerothcore/env/ref/etc"
-LOGS_DIR="${LOGS_DIR:-/azerothcore/env/dist/logs}"
 
-mkdir -p "$CONF_DIR" "$LOGS_DIR"
+mkdir -p "$CONF_DIR" "$DATA_DIR" "$LOGS_DIR"
 
 # Add newly provided upstream configuration templates without replacing
 # files already present in persistent server storage.
 cp -r --update=none "$REF_CONF_DIR"/. "$CONF_DIR"/
 
+# Create active configuration files from upstream defaults when missing.
 for component in authserver worldserver dbimport; do
     conf="$CONF_DIR/$component.conf"
     dist="$CONF_DIR/$component.conf.dist"
@@ -27,5 +30,9 @@ for component in authserver worldserver dbimport; do
         fi
     fi
 done
+
+# Tell AzerothCore where Pelican's persistent files live.
+export AC_DATA_DIR="$DATA_DIR"
+export AC_LOGS_DIR="$LOGS_DIR"
 
 exec "$@"
