@@ -4,7 +4,7 @@
         "version": "PLCN_v3",
         "update_url": null
     },
-    "exported_at": "2026-09-15T00:32:40+00:00",
+    "exported_at": "2026-09-15T03:14:49+00:00",
     "name": "AzerothCore",
     "author": "sintheticgaming@gmail.com",
     "uuid": "53aaa6e5-cf71-4ca1-a21c-a265d40c0ae5",
@@ -121,6 +121,58 @@
             "description": "Name of the AzerothCore world database.\n",
             "env_variable": "DB_WORLD",
             "default_value": "acore_world",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 9,
+            "name": "Realm Address",
+            "description": "Public IP address or DNS hostname clients should use to reach the realm.",
+            "env_variable": "REALM_ADDRESS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 10,
+            "name": "Realm Local Address",
+            "description": "Local/LAN IP address clients should use to reach the realm.",
+            "env_variable": "REALM_LOCAL_ADDRESS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 11,
+            "name": "Realm Local Subnet Mask",
+            "description": "Subnet mask used to determine which clients should use the local realm address.",
+            "env_variable": "REALM_LOCAL_SUBNET_MASK",
+            "default_value": "255.255.255.0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 8,
+            "name": "Realm Name",
+            "description": "Name displayed for this realm in the realm list.",
+            "env_variable": "REALM_NAME",
+            "default_value": "AzerothCore",
             "user_viewable": true,
             "user_editable": true,
             "rules": [
