@@ -1,0 +1,132 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PANEL",
+    "meta": {
+        "version": "PLCN_v3",
+        "update_url": null
+    },
+    "exported_at": "2026-09-15T00:32:40+00:00",
+    "name": "AzerothCore",
+    "author": "sintheticgaming@gmail.com",
+    "uuid": "53aaa6e5-cf71-4ca1-a21c-a265d40c0ae5",
+    "description": "AzerothCore 3.3.5a server using a precompiled community Pelican runtime and an external MySQL 8.0 database.",
+    "icon": null,
+    "tags": [
+        "azerothcore",
+        "wotlk"
+    ],
+    "features": [],
+    "docker_images": {
+        "pelican-azerothcore dev": "ghcr.io/sintheticgaming/pelican-azerothcore:dev"
+    },
+    "file_denylist": [],
+    "startup_commands": {
+        "Default": "/azerothcore/pelican-start.sh"
+    },
+    "config": {
+        "files": "{}",
+        "startup": "{\n  \"done\": \"worldserver-daemon) ready...\"\n}",
+        "logs": "{}",
+        "stop": "server shutdown 1s 0"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\nset -euo pipefail\n\nif ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then\n    apt-get update\n    apt-get install -y --no-install-recommends curl unzip ca-certificates\nfi\n\nCLIENT_DATA_VERSION=\"v20.0\"\nCLIENT_DATA_URL=\"https://github.com/wowgaming/client-data/releases/download/${CLIENT_DATA_VERSION}/data.zip\"\n\nINSTALL_DIR=\"/mnt/server\"\nDATA_DIR=\"${INSTALL_DIR}/data\"\nVERSION_FILE=\"${DATA_DIR}/data-version\"\nZIP_FILE=\"${INSTALL_DIR}/client-data.zip\"\n\necho \"Installing AzerothCore client data ${CLIENT_DATA_VERSION}...\"\n\nmkdir -p \"${DATA_DIR}\"\n\nINSTALLED_VERSION=\"\"\n\nif [[ -f \"${VERSION_FILE}\" ]]; then\n    # The version file is expected to contain:\n    # INSTALLED_VERSION=vX.Y\n    source \"${VERSION_FILE}\"\nfi\n\nif [[ \"${INSTALLED_VERSION:-}\" == \"${CLIENT_DATA_VERSION}\" ]]; then\n    echo \"Client data ${CLIENT_DATA_VERSION} is already installed.\"\n    echo \"Skipping download.\"\n    exit 0\nfi\n\necho \"Downloading client data...\"\ncurl --fail --location \\\n    \"${CLIENT_DATA_URL}\" \\\n    --output \"${ZIP_FILE}\"\n\necho \"Extracting client data...\"\nunzip -q -o \"${ZIP_FILE}\" -d \"${DATA_DIR}\"\n\nrm -f \"${ZIP_FILE}\"\n\nprintf 'INSTALLED_VERSION=%s\\n' \"${CLIENT_DATA_VERSION}\" > \"${VERSION_FILE}\"\n\necho \"Client data ${CLIENT_DATA_VERSION} installed successfully.\"",
+            "container": "ghcr.io/pelican-eggs/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "sort": 5,
+            "name": "Authentication Database",
+            "description": "Name of the AzerothCore authentication database.\n",
+            "env_variable": "DB_AUTH",
+            "default_value": "acore_auth",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 6,
+            "name": "Characters Database",
+            "description": "Name of the AzerothCore character database.\n",
+            "env_variable": "DB_CHARACTERS",
+            "default_value": "acore_characters",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 1,
+            "name": "Database Host",
+            "description": "Hostname or IP address of the external MySQL 8.0 server.",
+            "env_variable": "DB_HOST",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 4,
+            "name": "Database Password",
+            "description": "Password for the AzerothCore MySQL account.\n",
+            "env_variable": "DB_PASSWORD",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 2,
+            "name": "Database Port",
+            "description": "Port used by the external MySQL server.",
+            "env_variable": "DB_PORT",
+            "default_value": "3306",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "integer",
+                "between:1,65535"
+            ]
+        },
+        {
+            "sort": 3,
+            "name": "Database Username",
+            "description": "MySQL account used by AzerothCore.\n",
+            "env_variable": "DB_USER",
+            "default_value": "acore",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        },
+        {
+            "sort": 7,
+            "name": "World Database",
+            "description": "Name of the AzerothCore world database.\n",
+            "env_variable": "DB_WORLD",
+            "default_value": "acore_world",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": [
+                "required",
+                "string"
+            ]
+        }
+    ]
+}
