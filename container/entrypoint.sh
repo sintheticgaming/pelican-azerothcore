@@ -9,7 +9,6 @@ DATA_DIR="${DATA_DIR:-${SERVER_DIR}/data}"
 LOGS_DIR="${LOGS_DIR:-${SERVER_DIR}/logs}"
 
 REF_CONF_DIR="/azerothcore/env/ref/etc"
-DIST_CONF_DIR="/azerothcore/env/dist/etc"
 
 mkdir -p "$CONF_DIR" "$DATA_DIR" "$LOGS_DIR"
 
@@ -44,16 +43,6 @@ if [[ -d "$CONF_DIR/modules" ]]; then
             echo "Created $conf from upstream module defaults."
         fi
     done < <(find "$CONF_DIR/modules" -type f -name '*.conf.dist' -print0)
-fi
-
-# AzerothCore loads module configuration from its dist config directory even
-# when the main worldserver config is supplied from persistent Pelican storage.
-# Point that module directory at our persistent configuration when upstream has
-# not already created its own module config directory.
-mkdir -p "$DIST_CONF_DIR"
-
-if [[ ! -e "$DIST_CONF_DIR/modules" && ! -L "$DIST_CONF_DIR/modules" ]]; then
-    ln -s "$CONF_DIR/modules" "$DIST_CONF_DIR/modules"
 fi
 
 # Tell AzerothCore where Pelican's persistent files live.

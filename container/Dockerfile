@@ -40,6 +40,14 @@ COPY --chown=acore:acore --chmod=755 \
     container/start.sh \
     /azerothcore/pelican-start.sh
 
+# AzerothCore loads module configs from its compiled dist config directory.
+# Pelican's persistent server storage lives under /home/container, so create
+# the bridge at image build time instead of attempting to modify the image
+# filesystem at runtime.
+RUN mkdir -p /azerothcore/env/dist/etc \
+    && rm -rf /azerothcore/env/dist/etc/modules \
+    && ln -s /home/container/etc/modules /azerothcore/env/dist/etc/modules
+
 USER acore
 
 ENTRYPOINT ["/usr/bin/env", "bash", "/azerothcore/pelican-entrypoint.sh"]
