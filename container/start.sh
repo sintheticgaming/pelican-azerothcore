@@ -48,7 +48,6 @@ export AC_WORLD_DATABASE_INFO="${DB_HOST};${DB_PORT};${DB_USER};${DB_PASSWORD};$
 
 export AC_DISABLE_INTERACTIVE=1
 export AC_CLOSE_IDLE_CONNECTIONS=0
-export AC_ALE_BYTECODE_CACHE=1
 
 # Initialize or migrate the AzerothCore databases before starting the servers.
 echo "Checking AzerothCore databases..."

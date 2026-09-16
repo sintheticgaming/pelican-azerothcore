@@ -7,7 +7,9 @@ SERVER_DIR="${SERVER_DIR:-/home/container}"
 CONF_DIR="${CONF_DIR:-${SERVER_DIR}/etc}"
 DATA_DIR="${DATA_DIR:-${SERVER_DIR}/data}"
 LOGS_DIR="${LOGS_DIR:-${SERVER_DIR}/logs}"
+
 REF_CONF_DIR="/azerothcore/env/ref/etc"
+DIST_CONF_DIR="/azerothcore/env/dist/etc"
 
 mkdir -p "$CONF_DIR" "$DATA_DIR" "$LOGS_DIR"
 
@@ -15,7 +17,7 @@ mkdir -p "$CONF_DIR" "$DATA_DIR" "$LOGS_DIR"
 # files already present in persistent server storage.
 cp -r --update=none "$REF_CONF_DIR"/. "$CONF_DIR"/
 
-# Create active configuration files from upstream defaults when missing.
+# Create active core configuration files from upstream defaults when missing.
 for component in authserver worldserver dbimport; do
     conf="$CONF_DIR/$component.conf"
     dist="$CONF_DIR/$component.conf.dist"
@@ -30,6 +32,29 @@ for component in authserver worldserver dbimport; do
         fi
     fi
 done
+
+# Create active module configuration files from newly supplied upstream
+# templates without replacing existing user configuration.
+if [[ -d "$CONF_DIR/modules" ]]; then
+    while IFS= read -r -d '' dist; do
+        conf="${dist%.dist}"
+
+        if [[ ! -f "$conf" ]]; then
+            cp "$dist" "$conf"
+            echo "Created $conf from upstream module defaults."
+        fi
+    done < <(find "$CONF_DIR/modules" -type f -name '*.conf.dist' -print0)
+fi
+
+# AzerothCore loads module configuration from its dist config directory even
+# when the main worldserver config is supplied from persistent Pelican storage.
+# Point that module directory at our persistent configuration when upstream has
+# not already created its own module config directory.
+mkdir -p "$DIST_CONF_DIR"
+
+if [[ ! -e "$DIST_CONF_DIR/modules" && ! -L "$DIST_CONF_DIR/modules" ]]; then
+    ln -s "$CONF_DIR/modules" "$DIST_CONF_DIR/modules"
+fi
 
 # Tell AzerothCore where Pelican's persistent files live.
 export AC_DATA_DIR="$DATA_DIR"
