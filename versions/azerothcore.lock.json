@@ -2,14 +2,14 @@
   "channel": "master",
   "authserver": {
     "image": "acore/ac-wotlk-authserver",
-    "digest": "sha256:1c133317a883802cdc0cb015320146615117ffebc3e43bc2c698780852a2f4df"
+    "digest": "sha256:532f6d4ec771f3d3edc5091efe527b1212fa533bc79704af333219341fdb7d10"
   },
   "db_import": {
     "image": "acore/ac-wotlk-db-import",
-    "digest": "sha256:d2624ad2cb52270af5766d08d4ce0839520c26790cef7fa671712fe31fccbf8d"
+    "digest": "sha256:ab01a859bbc916a83ceb5caa1871126f9d160b2c877fb482bec7c08c3600d229"
   },
   "worldserver": {
     "image": "acore/ac-wotlk-worldserver",
-    "digest": "sha256:c988991bd48522d0262638e513a5de0e315bec33ad96b6842d7cc02b5bd79c04"
+    "digest": "sha256:612c9ffc6735279cb4ddb69ec9a21e1255880a54457c425293628b3ac5e64ee3"
   }
 }
